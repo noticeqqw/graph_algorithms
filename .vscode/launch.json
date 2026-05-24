@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/noticeqqw/main/Учеба/3 курс 2 семестр/Алгоритмы и Структуры/РГЗ/graph_rgz",
+      "program": "/Users/noticeqqw/main/Учеба/3 курс 2 семестр/Алгоритмы и Структуры/РГЗ/graph_rgz/build/Debug/outDebug"
+    }
+  ]
+}
