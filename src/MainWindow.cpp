@@ -277,12 +277,12 @@ QWidget* MainWindow::buildRightPanel()
         auto* ly = new QVBoxLayout(sec);
         ly->setContentsMargins(12, 14, 12, 14);
         ly->setSpacing(5);
-        auto* title = new QLabel("Задача 2 — BFS Distance");
+        auto* title = new QLabel("Задача 2");
         title->setObjectName("algoTitle");
         ly->addWidget(title);
         addSub(ly, "Стартовая вершина");
         m_bfsStartEdit = new QLineEdit;
-        m_bfsStartEdit->setPlaceholderText("A, B, C …");
+        m_bfsStartEdit->setPlaceholderText("Например А");
         connect(m_bfsStartEdit, &QLineEdit::returnPressed,
                 this, &MainWindow::onRunBFS);
         ly->addWidget(m_bfsStartEdit);
@@ -305,12 +305,12 @@ QWidget* MainWindow::buildRightPanel()
         auto* ly = new QVBoxLayout(sec);
         ly->setContentsMargins(12, 14, 12, 14);
         ly->setSpacing(5);
-        auto* title = new QLabel("Задача 3 — Prim MST");
+        auto* title = new QLabel("Задача 3");
         title->setObjectName("algoTitle");
         ly->addWidget(title);
         addSub(ly, "Стартовая вершина");
         m_primStartEdit = new QLineEdit;
-        m_primStartEdit->setPlaceholderText("A, B, C …");
+        m_primStartEdit->setPlaceholderText("Например А");
         connect(m_primStartEdit, &QLineEdit::returnPressed,
                 this, &MainWindow::onRunPrim);
         ly->addWidget(m_primStartEdit);

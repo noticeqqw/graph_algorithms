@@ -125,7 +125,8 @@ VertexItem::VertexItem(const QString& id, qreal x, qreal y,
 
 QRectF VertexItem::boundingRect() const
 {
-    return QRectF(-R - 10, -R - 10, (R + 10) * 2, (R + 10) * 2);
+    // Extend right/top to cover the dist label drawn at (R+4, -R+4)
+    return QRectF(-R - 10, -R - 10, (R + 10) * 2 + 50, (R + 10) * 2);
 }
 
 void VertexItem::paint(QPainter* painter,

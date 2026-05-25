@@ -28,7 +28,7 @@ TaskPanel::TaskPanel(AppGraph** g, GraphCanvas* c, ControlPanel* ctrl, QWidget* 
     lay->setSpacing(5);
 
     // BFS
-    lay->addWidget(heading("Задача 2 — BFS Distance"));
+    lay->addWidget(heading("Задача 2"));
     lay->addWidget(sub("Стартовая вершина:"));
     bfsStartInput = new QLineEdit;
     bfsStartInput->setPlaceholderText("Введите вершину...");
@@ -47,7 +47,7 @@ TaskPanel::TaskPanel(AppGraph** g, GraphCanvas* c, ControlPanel* ctrl, QWidget* 
     lay->addWidget(line1);
 
     // Prim
-    lay->addWidget(heading("Задача 3 — Prim MST"));
+    lay->addWidget(heading("Задача 3"));
     lay->addWidget(sub("Стартовая вершина:"));
     primStartInput = new QLineEdit;
     primStartInput->setPlaceholderText("Введите вершину...");
