@@ -20,6 +20,7 @@
 #include <QtMath>
 #include <algorithm>
 #include <limits>
+#include <vector>
 #include <tuple>
 #include <cmath>
 
@@ -442,6 +443,81 @@ void MainWindow::updateStats()
 void MainWindow::onOrientToggle(bool checked)
 {
     m_oriented = checked;
+
+    if (!m_graph) {
+        m_scene->setOriented(m_oriented);
+        syncEdgeList();
+        return;
+    }
+
+    if (checked) {
+        // undirected → directed: remove hidden reverse edges so they can be
+        // re-added manually as independent directed edges with their own weight.
+        std::vector<AppED*> toDelete;
+        for (AppED* e : m_graph->storage->GetAllEdges()) {
+            if (!m_edgeIds.contains(e))
+                toDelete.push_back(e);
+        }
+        for (AppED* e : toDelete) {
+            m_graph->storage->DeleteEdge(e->v1(), e->v2());
+            delete e;
+        }
+        m_graph->directed = true;
+        m_graph->edgeCount = (int)m_graph->storage->GetAllEdges().size();
+    } else {
+        // directed → undirected:
+        // Build canonical (min-index, max-index) → min-weight map, then
+        // replace all storage edges with canonical + reverse pairs.
+        auto& verts = m_graph->vertices;
+
+        auto vertIdx = [&](AppVD* v) {
+            for (int i = 0; i < (int)verts.size(); ++i)
+                if (verts[i] == v) return i;
+            return -1;
+        };
+
+        // Collect canonical pairs with minimum weight
+        QMap<QPair<int,int>, double> bestW;
+        for (AppED* e : m_graph->storage->GetAllEdges()) {
+            int i1 = vertIdx(e->v1()), i2 = vertIdx(e->v2());
+            auto key = qMakePair(std::min(i1, i2), std::max(i1, i2));
+            if (!bestW.contains(key) || e->GetW() < bestW[key])
+                bestW[key] = e->GetW();
+        }
+
+        // Wipe all existing edges from storage
+        for (AppED* e : m_graph->storage->GetAllEdges())
+            m_graph->storage->DeleteEdge(e->v1(), e->v2());
+        // storage is now empty but edge objects are leaked — delete via m_edgeIds
+        // (the AppED objects pointed to by m_edgeIds will be invalid after this,
+        //  so clear m_edgeIds immediately)
+        for (auto it = m_edgeIds.begin(); it != m_edgeIds.end(); ++it)
+            delete it.key();
+        m_edgeIds.clear();
+
+        // Re-insert as undirected pairs using the canonical weight
+        for (auto it = bestW.begin(); it != bestW.end(); ++it) {
+            AppVD* va = verts[it.key().first];
+            AppVD* vb = verts[it.key().second];
+            double w  = it.value();
+            AppED* e1 = new AppED(va, vb, w);
+            AppED* e2 = new AppED(vb, va, w);
+            m_graph->storage->InsertEdge(e1);
+            m_graph->storage->InsertEdge(e2);
+        }
+
+        m_graph->directed  = false;
+        m_graph->edgeCount = bestW.size();
+
+        // Rebuild scene without arrows and without parallel offsets
+        m_nextEid = 0;
+        m_scene->setOriented(false);
+        syncSceneFromGraph();
+        syncEdgeList();
+        updateStats();
+        return;
+    }
+
     m_scene->setOriented(m_oriented);
     syncEdgeList();
 }
@@ -718,37 +794,73 @@ void MainWindow::onRunBFS()
     }
 
     auto adj = buildAdj(m_graph, m_edgeIds, m_oriented);
-    QMap<QString, int> dist;
-    dist[start] = 0;
-    QQueue<QString> queue;
-    queue.enqueue(start);
 
+    // mainDist — расстояния только от стартовой вершины (для результата)
+    // allDist  — расстояния по всем компонентам (для подписей d= на вершинах)
+    QMap<QString, int> mainDist;
+    QMap<QString, int> allDist;
     QVector<AlgoFrame> frames;
-    { AlgoFrame f0; f0.nodes.insert(start); f0.dist = dist; frames.append(f0); }
 
-    while (!queue.isEmpty()) {
-        const QString cur = queue.dequeue();
-        for (const auto& nb : adj[cur]) {
-            const QString& to  = nb.first;
-            const int      eid = nb.second;
-            if (!dist.contains(to)) {
-                dist[to] = dist[cur] + 1;
-                queue.enqueue(to);
-                AlgoFrame f = frames.last();
-                f.nodes.insert(to);
-                f.edges.insert(eid);
-                f.dist = dist;
-                frames.append(f);
+    // BFS from start vertex
+    {
+        mainDist[start] = 0;
+        allDist[start]  = 0;
+        QQueue<QString> queue;
+        queue.enqueue(start);
+        AlgoFrame f0; f0.nodes.insert(start); f0.dist = allDist; frames.append(f0);
+        while (!queue.isEmpty()) {
+            const QString cur = queue.dequeue();
+            for (const auto& nb : adj[cur]) {
+                const QString& to  = nb.first;
+                const int      eid = nb.second;
+                if (!mainDist.contains(to)) {
+                    mainDist[to] = mainDist[cur] + 1;
+                    allDist[to]  = mainDist[to];
+                    queue.enqueue(to);
+                    AlgoFrame f = frames.last();
+                    f.nodes.insert(to);
+                    f.edges.insert(eid);
+                    f.dist = allDist;
+                    frames.append(f);
+                }
             }
         }
     }
 
-    m_finalDist = dist;
+    // BFS for remaining disconnected components — animate only, no d= labels
+    QSet<QString> visited;
+    for (auto& k : mainDist.keys()) visited.insert(k);
+    for (auto* v : m_graph->vertices) {
+        QString name = QString::fromStdString(v->GetName());
+        if (visited.contains(name)) continue;
+        QQueue<QString> queue;
+        queue.enqueue(name);
+        visited.insert(name);
+        AlgoFrame f0 = frames.last(); f0.nodes.insert(name); frames.append(f0);
+        while (!queue.isEmpty()) {
+            const QString cur = queue.dequeue();
+            for (const auto& nb : adj[cur]) {
+                const QString& to  = nb.first;
+                const int      eid = nb.second;
+                if (!visited.contains(to)) {
+                    visited.insert(to);
+                    queue.enqueue(to);
+                    AlgoFrame f = frames.last();
+                    f.nodes.insert(to);
+                    f.edges.insert(eid);
+                    frames.append(f);
+                }
+            }
+        }
+    }
 
+    m_finalDist = mainDist;
+
+    // Final frame highlights only vertices at distance d FROM START
     AlgoFrame finalFrame;
     for (auto* v : m_graph->vertices) {
         QString name = QString::fromStdString(v->GetName());
-        if (dist.value(name, -1) == d) finalFrame.nodes.insert(name);
+        if (mainDist.value(name, -1) == d) finalFrame.nodes.insert(name);
     }
     auto& verts = m_graph->vertices;
     for (AppED* e : m_graph->storage->GetAllEdges()) {
@@ -760,30 +872,29 @@ void MainWindow::onRunBFS()
         }
         QString from = QString::fromStdString(e->v1()->GetName());
         QString to   = QString::fromStdString(e->v2()->GetName());
-        int fd = dist.value(from, -1), td = dist.value(to, -1);
+        int fd = mainDist.value(from, -1), td = mainDist.value(to, -1);
         if (fd >= 0 && td >= 0 && qAbs(fd - td) == 1 && (fd == d || td == d))
             finalFrame.edges.insert(m_edgeIds[e]);
     }
-    finalFrame.dist = dist;
+    finalFrame.dist = mainDist;
     frames.append(finalFrame);
 
-    // Precompute result so the lambda doesn't touch m_graph after a possible rebuild
+    // Result text — only from start component
     QStringList res;
     for (auto* v : m_graph->vertices) {
         QString name = QString::fromStdString(v->GetName());
-        if (dist.value(name, -1) == d) res << name;
+        if (mainDist.value(name, -1) == d) res << name;
     }
     const QString resultText = res.isEmpty()
         ? QString("Нет вершин на расстоянии %1").arg(d)
         : QString("Расстояние %1:  %2").arg(d).arg(res.join(", "));
-    const QMap<QString, int> finalDistCopy = dist;
 
     startAnimation(frames, 300);
 
     const int delay = frames.size() * 300 + 200;
-    QTimer::singleShot(delay, this, [this, resultText, finalDistCopy] {
+    QTimer::singleShot(delay, this, [this, resultText, mainDist] {
         m_resultEdit->setText(resultText);
-        m_scene->showBFSDist(finalDistCopy);
+        m_scene->showBFSDist(mainDist);
     });
 }
 
@@ -840,36 +951,51 @@ void MainWindow::onRunPrim()
     QVector<AlgoFrame> frames;
     { AlgoFrame f0; f0.nodes.insert(start); frames.append(f0); }
 
-    while (inMST.size() < m_graph->V()) {
-        int     bestW   = std::numeric_limits<int>::max();
-        int     bestEid = -1;
-        QString bestTo;
-
-        for (const auto& v : inMST) {
-            for (const auto& t : adj[v]) {
-                const QString& to  = std::get<0>(t);
-                const int      eid = std::get<1>(t);
-                const int      w   = std::get<2>(t);
-                if (!inMST.contains(to) && w < bestW) {
-                    bestW = w; bestEid = eid; bestTo = to;
+    // Helper: run one Prim wave from current inMST frontier
+    auto primWave = [&]() {
+        while (true) {
+            int     bestW   = std::numeric_limits<int>::max();
+            int     bestEid = -1;
+            QString bestTo;
+            for (const auto& v : inMST) {
+                for (const auto& t : adj[v]) {
+                    const QString& to  = std::get<0>(t);
+                    const int      eid = std::get<1>(t);
+                    const int      w   = std::get<2>(t);
+                    if (!inMST.contains(to) && w < bestW) {
+                        bestW = w; bestEid = eid; bestTo = to;
+                    }
                 }
             }
+            if (bestEid < 0) break;
+            inMST.insert(bestTo);
+            mstEids.append(bestEid);
+            AlgoFrame f;
+            f.nodes = QSet<QString>(inMST.begin(), inMST.end());
+            f.edges = QSet<int>(mstEids.begin(), mstEids.end());
+            frames.append(f);
         }
-        if (bestEid < 0) break;
+    };
 
-        inMST.insert(bestTo);
-        mstEids.append(bestEid);
+    primWave();
+    // Save result of start component before traversing other components
+    const QVector<int> mstEidsMain = mstEids;
 
-        AlgoFrame f;
-        f.nodes = QSet<QString>(inMST.begin(), inMST.end());
-        f.edges = QSet<int>(mstEids.begin(), mstEids.end());
+    // Animate remaining disconnected components (not included in result)
+    for (auto* v : m_graph->vertices) {
+        QString name = QString::fromStdString(v->GetName());
+        if (inMST.contains(name)) continue;
+        inMST.insert(name);
+        AlgoFrame f = frames.last();
+        f.nodes.insert(name);
         frames.append(f);
+        primWave();
     }
 
-    // Precompute result before animation delay so it doesn't depend on m_graph later
+    // Precompute result — only start component
     int totalW = 0;
     QStringList parts;
-    for (int eid : mstEids) {
+    for (int eid : mstEidsMain) {
         for (auto it = m_edgeIds.cbegin(); it != m_edgeIds.cend(); ++it) {
             if (it.value() == eid) {
                 AppED* e = it.key();
@@ -883,11 +1009,6 @@ void MainWindow::onRunPrim()
             }
         }
     }
-
-    if (inMST.size() < (qsizetype)m_graph->V()) {
-        parts.prepend("⚠ Граф несвязный, MST неполное");
-    }
-
     const QString resultText = parts.isEmpty()
         ? "MST: пусто (нет рёбер)"
         : QString("MST:\n%1\n\nСуммарный вес: %2").arg(parts.join("\n")).arg(totalW);

@@ -120,17 +120,23 @@ public:
     }
 
     void DeleteV(VD* v) {
-        // Удалить все рёбра инцидентные v и скорректировать счётчик
         auto allEdges = storage->GetAllEdges();
+        std::vector<ED*> toDelete;
         int removed = 0;
         for (ED* e : allEdges) {
             if (e->v1() == v || e->v2() == v) {
-                ++removed;
-                delete e;
+                toDelete.push_back(e);
+                // для неориент. считаем только одно направление (v1==v),
+                // т.к. каждое логическое ребро хранится как два объекта
+                if (directed || e->v1() == v)
+                    ++removed;
             }
         }
-        edgeCount -= removed;
+        // СНАЧАЛА убираем из хранилища — RemoveVertex обращается к e->v2() внутри
         storage->RemoveVertex(v);
+        // ТЕПЕРЬ безопасно удалять объекты рёбер
+        for (ED* e : toDelete) delete e;
+        edgeCount -= removed;
         vertices.erase(std::remove(vertices.begin(), vertices.end(), v), vertices.end());
         delete v;
     }

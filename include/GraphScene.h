@@ -17,8 +17,12 @@ public:
 
     int  edgeId() const { return m_eid; }
     void setHighlighted(bool h);
-    void setOriented(bool o) { m_oriented = o; prepareGeometryChange(); update(); }
-    void updateGeom()        { prepareGeometryChange(); update(); }
+    void setOriented(bool o)  { m_oriented = o; prepareGeometryChange(); update(); }
+    void setParallel(bool p)  { m_parallel = p; prepareGeometryChange(); update(); }
+    void updateGeom()         { prepareGeometryChange(); update(); }
+
+    VertexItem* fromItem() const { return m_from; }
+    VertexItem* toItem()   const { return m_to; }
 
     QRectF       boundingRect() const override;
     QPainterPath shape()        const override;
@@ -39,6 +43,7 @@ private:
     int         m_weight;
     bool        m_oriented;
     bool        m_highlighted = false;
+    bool        m_parallel    = false;
 };
 
 // ── VertexItem ────────────────────────────────────────────────────────────────

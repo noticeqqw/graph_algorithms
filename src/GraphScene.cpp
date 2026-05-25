@@ -66,9 +66,11 @@ void EdgeItem::paint(QPainter* painter,
     const qreal   len   = QLineF(fc, tc).length();
     if (len < 1.0) return;
 
-    const QPointF dir = delta / len;
-    const QPointF p1  = fc + dir * VertexItem::R;
-    const QPointF p2  = tc - dir * (m_oriented ? VertexItem::R + 10.0 : VertexItem::R);
+    const QPointF dir  = delta / len;
+    const QPointF perp(-dir.y(), dir.x());
+    const qreal   off  = m_parallel ? 7.0 : 0.0;
+    const QPointF p1   = fc + dir * VertexItem::R  + perp * off;
+    const QPointF p2   = tc - dir * (m_oriented ? VertexItem::R + 10.0 : VertexItem::R) + perp * off;
 
     const QColor col = m_highlighted ? QColor(20, 20, 20) : QColor(90, 90, 90);
     const qreal  sw  = m_highlighted ? 2.5 : 1.5;
@@ -79,12 +81,12 @@ void EdgeItem::paint(QPainter* painter,
     if (m_oriented) {
         painter->setPen(Qt::NoPen);
         painter->setBrush(col);
-        arrowHead(painter, tc - dir * VertexItem::R, dir, 9.0);
+        arrowHead(painter, tc - dir * VertexItem::R + perp * off, dir, 9.0);
     }
 
     // Weight label
-    const QPointF mid  = (fc + tc) * 0.5;
-    const QPointF norm = QPointF(-dir.y(), dir.x()) * 15.0;
+    const QPointF mid  = (fc + tc) * 0.5 + perp * off;
+    const QPointF norm = perp * 15.0;
     const QPointF lpos = mid + norm;
 
     const QString ws = QString::number(m_weight);
@@ -259,14 +261,33 @@ void GraphScene::addEdge(int eid, const QString& from,
     connect(item, &EdgeItem::edgeClicked, this, &GraphScene::edgeSelected);
     m_eItems[eid] = item;
     addItem(item);
+
+    // Detect reverse parallel edge and offset both
+    for (auto* other : m_eItems) {
+        if (other == item) continue;
+        if (other->fromItem() == tv && other->toItem() == fv) {
+            item->setParallel(true);
+            other->setParallel(true);
+            break;
+        }
+    }
 }
 
 void GraphScene::removeEdge(int eid)
 {
-    if (auto* item = m_eItems.take(eid)) {
-        removeItem(item);
-        delete item;
+    auto* item = m_eItems.take(eid);
+    if (!item) return;
+
+    // If the removed edge had a parallel partner, un-parallel it
+    for (auto* other : m_eItems) {
+        if (other->fromItem() == item->toItem() && other->toItem() == item->fromItem()) {
+            other->setParallel(false);
+            break;
+        }
     }
+
+    removeItem(item);
+    delete item;
 }
 
 void GraphScene::clearHighlights()

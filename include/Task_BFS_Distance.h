@@ -30,23 +30,16 @@ public:
         Restart();
     }
 
-    // BFS: O(V + E)
-    void Restart() {
-        result.clear();
-        if (!graph || !startVertex) return;
-
-        std::unordered_map<VD*, int> dist;
+    // BFS из одной стартовой вершины; заполняет dist
+    void bfsFrom(VD* src, std::unordered_map<VD*, int>& dist) {
         std::queue<VD*> q;
-        dist[startVertex] = 0;
-        q.push(startVertex);
-
+        dist[src] = 0;
+        q.push(src);
         while (!q.empty()) {
             VD* v = q.front(); q.pop();
             int dv = dist[v];
             if (dv >= distance) continue;
-
-            auto outEdges = graph->storage->GetOutEdges(v);
-            for (auto* e : outEdges) {
+            for (auto* e : graph->storage->GetOutEdges(v)) {
                 VD* u = e->v2();
                 if (dist.count(u)) continue;
                 dist[u] = dv + 1;
@@ -55,6 +48,23 @@ public:
                 else
                     q.push(u);
             }
+        }
+    }
+
+    // BFS: O(V + E), обходит все компоненты связности
+    void Restart() {
+        result.clear();
+        if (!graph || !startVertex) return;
+
+        std::unordered_map<VD*, int> dist;
+
+        // Основная компонента — стартуем из startVertex
+        bfsFrom(startVertex, dist);
+
+        // Остальные компоненты — запускаем BFS из каждой непосещённой вершины
+        for (VD* v : graph->vertices) {
+            if (!dist.count(v))
+                bfsFrom(v, dist);
         }
     }
 
